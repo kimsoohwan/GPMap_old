@@ -1,0 +1,385 @@
+// STL
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <vector>
+
+// Eigen
+#define EIGEN_USE_MKL_ALL
+#include <Eigen/Core>
+#include <Eigen/Cholesky>
+#include <bench/BenchTimer.h>
+
+// MKL
+#include <mkl_cblas.h>
+
+#ifdef EIGEN_USE_MKL_ALL
+#define MODE			"Eigen with MKL"
+#define MV_FILE_NAME "./bench/matrix_vector_product_MKL.txt"
+#define MM_FILE_NAME "./bench/matrix_matrix_product_MKL.txt"
+#else
+#define MODE			"Eigen without MKL"
+#define MV_FILE_NAME "./bench/matrix_vector_product.txt"
+#define MM_FILE_NAME "./bench/matrix_matrix_product.txt"
+#endif
+
+#ifdef _FLOAT
+typedef float Scalar;
+#define CBLAS_GEMV  cblas_sgemv
+#define CBLAS_GEMM  cblas_sgemm
+#define CBLAS_POTRF cblas_spotrf
+#else
+typedef double Scalar;
+#define CBLAS_GEMV  cblas_dgemv
+#define CBLAS_GEMM  cblas_dgemm
+#define CBLAS_POTRF cblas_dpotrf
+#endif
+
+typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> MyMatrix;
+typedef Eigen::Matrix<Scalar, Eigen::Dynamic, 1> MyVector;
+
+// bench function
+void (*benchFunctionPtr)(const int, const unsigned int, double&, double&, double&, double&);
+
+// matrix vector product
+void benchmv_(const int M, const int N, const unsigned int rep,
+				  double &avgTimeEigen, double &GFLOPSEigen, double &avgTimeMKL, double &GFLOPSMKL);
+void benchmv(const std::string filename, std::vector<int> &dynSizes, const unsigned int rep);
+
+// matrix matrix product
+void benchmm_(const int M, const int N, const int K, const unsigned int rep,
+				  double &avgTimeEigen, double &GFLOPSEigen, double &avgTimeMKL, double &GFLOPSMKL);
+void benchmm(const std::string filename, std::vector<int> &dynSizes, const unsigned int rep);
+
+int main()
+{
+	std::cout << MODE << std::endl;
+
+	const unsigned int REP = 10;
+	const int dynSizes_[] = {4,6,8,16,24,32,49,64,128,256,512,900};
+	std::vector<int> dynSizes(dynSizes_, dynSizes_ + sizeof(dynSizes_)/sizeof(int));
+
+	benchmv(MV_FILE_NAME, dynSizes, REP);
+	benchmm(MM_FILE_NAME, dynSizes, REP);
+
+	system("pause");
+	return 0;
+}
+
+void benchmv_(const int M, const int N, const unsigned int rep,
+				 double &avgTimeEigen, double &GFLOPSEigen, double &avgTimeMKL, double &GFLOPSMKL)
+{
+	// timer
+	Eigen::BenchTimer timer;
+	const double FLOP = M * N * rep;
+
+	// Eigen
+	MyMatrix A(M, N);
+	MyVector b(N), c(N);
+	A = MyMatrix::Random(M, N);
+	b = MyVector::Random(N);
+	c = MyVector::Random(N);
+	MyVector c_old(c);
+
+	timer.reset();
+	timer.start();
+	for(unsigned int i = 0; i < rep; i++)
+	{
+		c.noalias() += A * b;
+	}
+	timer.stop();
+	avgTimeEigen = timer.value() / (double)rep;
+	GFLOPSEigen = 1e-9*FLOP/timer.value();
+
+	MyVector c_eigen(c);
+	c = c_old;
+
+	// MKL
+	Scalar alpha = 1;
+	Scalar beta = 1;
+
+	timer.reset();
+	timer.start();
+	for(unsigned int i = 0; i < rep; i++)
+	{
+		#ifdef EIGEN_DEFAULT_TO_ROW_MAJOR
+		CBLAS_GEMV(CblasRowMajor, CblasNoTrans, M, N, alpha, A.data(), N, b.data(), 1, beta, c.data(), 1);
+		#else
+		CBLAS_GEMV(CblasColMajor, CblasNoTrans, M, N, alpha, A.data(), N, b.data(), 1, beta, c.data(), 1);
+		#endif
+	}
+	timer.stop();
+	avgTimeMKL = timer.value() / (double)rep;
+	GFLOPSMKL = 1e-9*FLOP/timer.value();
+
+	if(!c_eigen.isApprox(c, 1e-4)) std::cout << "wrong!" << std::endl;
+	else									 std::cout << "correct!" << std::endl;
+}
+
+void benchmv(const std::string filename, std::vector<int> &dynSizes, const unsigned int rep)
+{
+	std::cout << "matrix vector product (c += A * b)" << std::endl;
+
+	// file
+	std::ofstream fout(filename.c_str());
+	//fout << "N\tavg time Eigen\tGFLOPS Eigen\tavg time MKL\tGFLPS MKL" << std::endl;
+
+	int N;
+	double avgTimeEigen,		avgTimeMKL;
+	double GFLOPSEigen,	GFLOPSMKL;
+	for(unsigned int i = 0; i < dynSizes.size(); ++i)
+	{
+		N = dynSizes[i];
+		std::cout << "N = " << N << std::endl;
+		benchmv_(N, N, rep, avgTimeEigen, GFLOPSEigen, avgTimeMKL, GFLOPSMKL);
+		fout << N << "\t" << avgTimeEigen << "\t" << GFLOPSEigen << "\t" << avgTimeMKL << "\t" << GFLOPSMKL << std::endl;
+	}
+	fout.close();
+}
+
+void benchmm_(const int M, const int N, const int K, const unsigned int rep,
+				 double &avgTimeEigen, double &GFLOPSEigen, double &avgTimeMKL, double &GFLOPSMKL)
+{
+	// timer
+	Eigen::BenchTimer timer;
+	const double FLOP = M * N * K * rep;
+
+	// Eigen
+	MyMatrix A(M, K), B(K, N), C(M, N);
+	A = MyMatrix::Random(M, K);
+	B = MyMatrix::Random(K, N);
+	C = MyMatrix::Random(M, N);
+	MyMatrix C_old(C);
+
+	timer.reset();
+	timer.start();
+	for(unsigned int i = 0; i < rep; i++)
+	{
+		C.noalias() += A * B;
+	}
+	timer.stop();
+	avgTimeEigen = timer.value() / (double)rep;
+	GFLOPSEigen = 1e-9*FLOP/timer.value();
+
+	MyMatrix C_eigen(C);
+	C = C_old;
+
+	// MKL
+	Scalar alpha = 1;
+	Scalar beta = 1;
+
+	timer.reset();
+	timer.start();
+	for(unsigned int i = 0; i < rep; i++)
+	{
+		#ifdef EIGEN_DEFAULT_TO_ROW_MAJOR
+		CBLAS_GEMM(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, alpha, A.data(), K, B.data(), N, beta, C.data(), N);
+		#else
+		CBLAS_GEMM(CblasColMajor, CblasNoTrans, CblasNoTrans, M, N, K, alpha, A.data(), M, B.data(), K, beta, C.data(), M);
+		#endif
+	}
+	timer.stop();
+	avgTimeMKL = timer.value() / (double)rep;
+	GFLOPSMKL = 1e-9*FLOP/timer.value();
+
+	if(!C_eigen.isApprox(C, 1e-4)) std::cout << "wrong!" << std::endl;
+	else									 std::cout << "correct!" << std::endl;
+}
+
+void benchmm(const std::string filename, std::vector<int> &dynSizes, const unsigned int rep)
+{
+	std::cout << "matrix matrix product (C += A * B)" << std::endl;
+
+	// file
+	std::ofstream fout(filename.c_str());
+	//fout << "N\tavg time Eigen\tGFLOPS Eigen\tavg time MKL\tGFLPS MKL" << std::endl;
+
+	int N;
+	double avgTimeEigen,		avgTimeMKL;
+	double GFLOPSEigen,	GFLOPSMKL;
+	for(unsigned int i = 0; i < dynSizes.size(); ++i)
+	{
+		N = dynSizes[i];
+		std::cout << "N = " << N << std::endl;
+		benchmm_(N, N, N, rep, avgTimeEigen, GFLOPSEigen, avgTimeMKL, GFLOPSMKL);
+		fout << N << "\t" << avgTimeEigen << "\t" << GFLOPSEigen << "\t" << avgTimeMKL << "\t" << GFLOPSMKL << std::endl;
+	}
+	fout.close();
+}
+
+void benchcholesky_(const int N, const unsigned int rep,
+				 double &avgTimeEigen, double &GFLOPSEigen, double &avgTimeMKL, double &GFLOPSMKL)
+{
+	// timer
+	Eigen::BenchTimer timer;
+	double FLOP = 0;
+	for (int i = 0; i < N; ++i)
+	{
+		int r = std::max(N - i -1, 0);
+		FLOP += 2*(r*i+r+i);
+	}
+	FLOP *= static_cast<double>(rep);
+
+	// Eigen
+	MyMatrix A(N, N);
+	A = MyMatrix::Random(N, N);
+	A = A * A.transpose();
+
+	MyMatrix A_old(A);
+
+	timer.reset();
+	timer.start();
+	for(unsigned int i = 0; i < rep; i++)
+	{
+		internal::llt_inplace<real,Lower>::blocked(A);
+		//A = A.llt().matrixL();
+	}
+	timer.stop();
+	avgTimeEigen = timer.value() / (double)rep;
+	GFLOPSEigen = 1e-9*FLOP/timer.value();
+
+	MyMatrix A_eigen(A);
+	A = A_old;
+
+	// MKL
+	Scalar alpha = 1;
+	Scalar beta = 1;
+
+	timer.reset();
+	timer.start();
+	for(unsigned int i = 0; i < rep; i++)
+	{
+		#ifdef EIGEN_DEFAULT_TO_ROW_MAJOR
+		CBLAS_POTRF(CblasRowMajor, 'L', &N, A.data(), N);
+		#else
+		CBLAS_POTRF(CblasColMajor, 'L', &N, A.data(), N);
+		#endif
+	}
+	timer.stop();
+	avgTimeMKL = timer.value() / (double)rep;
+	GFLOPSMKL = 1e-9*FLOP/timer.value();
+
+	if(!A_eigen.isApprox(A, 1e-4)) std::cout << "wrong!" << std::endl;
+	else									 std::cout << "correct!" << std::endl;
+}
+
+void bench(const std::string filename, std::vector<int> &dynSizes, const unsigned int rep)
+{
+	// file
+	std::ofstream fout(filename.c_str());
+	//fout << "N\tavg time Eigen\tGFLOPS Eigen\tavg time MKL\tGFLPS MKL" << std::endl;
+
+	int N;
+	double avgTimeEigen,		avgTimeMKL;
+	double GFLOPSEigen,	GFLOPSMKL;
+	for(unsigned int i = 0; i < dynSizes.size(); ++i)
+	{
+		N = dynSizes[i];
+		std::cout << "N = " << N << std::endl;
+		benchmm_(N, N, N, rep, avgTimeEigen, GFLOPSEigen, avgTimeMKL, GFLOPSMKL);
+		fout << N << "\t" << avgTimeEigen << "\t" << GFLOPSEigen << "\t" << avgTimeMKL << "\t" << GFLOPSMKL << std::endl;
+	}
+	fout.close();
+}
+
+/*
+#define min(x,y) (((x) < (y)) ? (x) : (y))
+#include <stdio.h>
+#include <stdlib.h>
+#include "mkl.h"
+
+int main()
+{
+	double *A, *B, *C;
+	int m, n, k, i, j;
+	double alpha, beta;
+
+	printf ("\n This example computes real matrix C=alpha*A*B+beta*C using \n"
+	" Intel(R) MKL function dgemm, where A, B, and C are matrices and \n"
+	" alpha and beta are double precision scalars\n\n");
+
+	// A: mxk
+	// B: kxn
+	// C = A*B: mxn
+	m = 2000, k = 200, n = 1000;
+	printf (" Initializing data for matrix multiplication C=A*B for matrix \n"
+	" A(%ix%i) and matrix B(%ix%i)\n\n", m, k, k, n);
+
+	alpha = 1.0; beta = 0.0;
+
+	// memory allocation
+	printf (" Allocating memory for matrices aligned on 64-byte boundary for better \n"
+	" performance \n\n");
+	A = (double *)mkl_malloc( m*k*sizeof( double ), 64 );
+	B = (double *)mkl_malloc( k*n*sizeof( double ), 64 );
+	C = (double *)mkl_malloc( m*n*sizeof( double ), 64 );
+	if (A == NULL || B == NULL || C == NULL)
+	{
+		printf( "\n ERROR: Can't allocate memory for matrices. Aborting... \n\n");
+		mkl_free(A);
+		mkl_free(B);
+		mkl_free(C);
+		return 1;
+	}
+
+	// initialization
+	printf (" Intializing matrix data \n\n");
+	for (i = 0; i < (m*k); i++)
+	{
+		A[i] = (double)(i+1);
+	}
+	for (i = 0; i < (k*n); i++)
+	{
+		B[i] = (double)(-i-1);
+	}
+	for (i = 0; i < (m*n); i++)
+	{
+		C[i] = 0.0;
+	}
+
+	// matrix product
+	printf (" Computing matrix product using Intel(R) MKL dgemm function via CBLAS interface \n\n");
+	cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, m, n, k, alpha, A, k, B, n, beta, C, n);
+	printf ("\n Computations completed.\n\n");
+
+	// print
+	printf (" Top left corner of matrix A: \n");
+	for (i=0; i<min(m,6); i++)
+	{
+		for (j=0; j<min(k,6); j++)
+		{
+			printf ("%12.0f", A[j+i*k]);
+		}
+		printf ("\n");
+	}
+
+	printf ("\n Top left corner of matrix B: \n");
+	for (i=0; i<min(k,6); i++)
+	{
+		for (j=0; j<min(n,6); j++)
+		{
+			printf ("%12.0f", B[j+i*n]);
+		}
+		printf ("\n");
+	}
+
+	printf ("\n Top left corner of matrix C: \n");
+	for (i=0; i<min(m,6); i++)
+	{
+		for (j=0; j<min(n,6); j++)
+		{
+			printf ("%12.5G", C[j+i*n]);
+		}
+		printf ("\n");
+	}
+
+	// deallocation
+	printf ("\n Deallocating memory \n\n");
+	mkl_free(A);
+	mkl_free(B);
+	mkl_free(C);
+
+	printf (" Example completed. \n\n");
+	return 0;
+}
+*/

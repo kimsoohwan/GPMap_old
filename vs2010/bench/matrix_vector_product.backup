@@ -1,0 +1,69 @@
+clc
+clear all
+close all
+
+REP = 10;
+h = figure('Name', 'Matrix Vector Product', 'Position', [100, 100, 800, 600]);
+
+for mkl = 0:1
+    % N, avg time Eigen, GFLOPS Eigen, avg time MKL, GFLPS MKL
+    if mkl == 0
+        Data = load('matrix_vector_product.txt');
+    else
+        Data = load('matrix_vector_product_MKL.txt');
+    end
+    num_test = size(Data, 1);
+    Data = [Data, zeros(num_test, 2)];
+
+    % bench for Matlab
+    for test = 1: num_test
+        N = Data(test, 1);
+        FLOP = N * N * REP;
+
+        A = rand(N, N);
+        b = rand(N, 1);
+        c = rand(N, 1);
+        %tic;
+        time = cputime;
+        for i = 1:REP
+            c = A * b;
+        end
+        elapsed_time = cputime - time;
+        %elapsed_time = toc;
+        Data(test, 6) = elapsed_time/REP;
+        Data(test, 7) = 10^-9*FLOP/elapsed_time;
+    end
+
+    % draw
+    if mkl == 0
+        subplot(2, 2, 1);
+        title('Average Time');
+    else
+        subplot(2, 2, 3);
+        title('Average Time with MKL');
+    end
+    xlabel('N');
+    ylabel('sec');
+    hold on
+    plot(Data(:, 1), Data(:, 2), '-*b', 'LineWidth', 3);
+    plot(Data(:, 1), Data(:, 4), '-*r', 'LineWidth', 2);
+    plot(Data(:, 1), Data(:, 6), '-*k', 'LineWidth', 1);
+    legend('Eigen', 'MKL', 'Matlab', 'Location', 'NorthWest');
+    set(gca,'XScale','log') 
+
+    if mkl == 0
+        subplot(2, 2, 2);
+        title('GFLPS');
+    else
+        subplot(2, 2, 4);
+        title('GFLPS with MKL');
+    end
+    xlabel('N');
+    ylabel('GFLPS');
+    hold on
+    plot(Data(:, 1), Data(:, 3), '-*b', 'LineWidth', 3);
+    plot(Data(:, 1), Data(:, 5), '-*r', 'LineWidth', 2);
+    plot(Data(:, 1), Data(:, 7), '-*k', 'LineWidth', 1);
+    legend('Eigen', 'MKL', 'Matlab', 'Location', 'NorthWest');
+    set(gca,'XScale','log') 
+end

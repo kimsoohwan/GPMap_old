@@ -3,6 +3,8 @@ Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual Studio 2010
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GPMap", "GPMap.vcxproj", "{65F80623-15EB-4527-BB54-F048FF072E42}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MKLvsEigen", "MKLvsEigen.vcxproj", "{A5074468-20D9-455E-A46F-C1A86A5FD371}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -13,6 +15,10 @@ Global
 		{65F80623-15EB-4527-BB54-F048FF072E42}.Debug|Win32.Build.0 = Debug|Win32
 		{65F80623-15EB-4527-BB54-F048FF072E42}.Release|Win32.ActiveCfg = Release|Win32
 		{65F80623-15EB-4527-BB54-F048FF072E42}.Release|Win32.Build.0 = Release|Win32
+		{A5074468-20D9-455E-A46F-C1A86A5FD371}.Debug|Win32.ActiveCfg = Debug|Win32
+		{A5074468-20D9-455E-A46F-C1A86A5FD371}.Debug|Win32.Build.0 = Debug|Win32
+		{A5074468-20D9-455E-A46F-C1A86A5FD371}.Release|Win32.ActiveCfg = Release|Win32
+		{A5074468-20D9-455E-A46F-C1A86A5FD371}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
